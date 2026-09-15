@@ -76,7 +76,20 @@ Random smooth initial fields are generated as a sum of 2D Gaussian bumps with ra
  
 Before trusting any deep model's output, a single conv layer with no activation function is trained on one-step ($N=1$) FD data. Because one explicit Euler step is itself a single 3×3 convolution, this model has exactly the right capacity to recover the true stencil — no more, no less. If the learned kernel converges toward:
  
-$$K_{\text{true}} = \frac{\alpha \Delta t}{\Delta x^2}\begin{bmatrix} 0 & 1 & 0 \\ 1 & -4 & 1 \\ 0 & 1 & 0 \end{bmatrix} + \begin{bmatrix} 0 & 0 & 0 \\ 0 & 1 & 0 \\ 0 & 0 & 0 \end{bmatrix}$$
+$$
+K_{\text{true}} = \frac{\alpha \Delta t}{\Delta x^2}
+\begin{bmatrix}
+0 & 1 & 0 \\
+1 & -4 & 1 \\
+0 & 1 & 0
+\end{bmatrix}
++
+\begin{bmatrix}
+0 & 0 & 0 \\
+0 & 1 & 0 \\
+0 & 0 & 0
+\end{bmatrix}
+$$
  
 the entire pipeline — autodiff, conv2d forward/backward, training loop, data generation — is validated end to end before any deeper architecture is trusted.
  
