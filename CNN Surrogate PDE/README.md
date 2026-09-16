@@ -1,6 +1,6 @@
 # Project 01 — CNN Surrogate PDE (Heat Equation)
 
-Part of the SciML Foundations series — a structured sequence of scientific machine learning projects built entirely from scratch in Python using only Numpy and JAX.
+Part of the GDL Foundations series — a structured sequence of geometric Deep learning projects built entirely from scratch in Python using only Numpy and JAX.
 
 **Series:** Phase 1 Foundations
 1. CNN — Heat Equation Surrogate ← you are here
