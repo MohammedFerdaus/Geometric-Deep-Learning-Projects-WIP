@@ -1,35 +1,93 @@
-import sys
-import os
+import numpy as np
+import matplotlib.pyplot as plt
 
-from data.load_qm9 import load_qm9_subset, train_val_test_split
-from data.graph_utils import build_dataset_graphs
-from train import load_checkpoint, evaluate, CHECKPOINT_DIR
-from visualize import (plot_loss_curve, plot_parity, plot_error_histogram,
-                       plot_error_vs_molecule_size)
+from model.mpnn import batched_mpnn_forward
+from train import train_loop
 
-def main(run_name):
-    ckpt_path = os.path.join(CHECKPOINT_DIR, f'{run_name}.pkl')
-    state = load_checkpoint(ckpt_path)
-    cfg = state['run_config']
-    print(f"Loaded {ckpt_path}: {state['epoch']} epochs completed, config={cfg}")
 
-    molecules = load_qm9_subset(n_molecules=cfg['n_molecules'], seed=cfg['seed'],
-                                target_index=cfg['target_index'])
-    graphs = build_dataset_graphs(molecules)
-    _, _, test_graphs = train_val_test_split(graphs, seed=cfg['seed'])
+def get_predictions(params, graphs, target_mean, target_std):
+    preds = np.array(batched_mpnn_forward(params, graphs)).reshape(-1) * target_std + target_mean
+    targets = np.array([g['target'] for g in graphs])
+    return preds, targets
 
-    params = state['params']
-    target_mean, target_std = state['target_mean'], state['target_std']
 
-    print("test metrics:", evaluate(params, test_graphs, target_mean, target_std))
-    print(f"target_std={target_std:.2f}  (predict-the-mean MAE is roughly {0.8 * target_std:.2f})")
+def plot_loss_curve(history, save_path=None):
+    epochs = range(len(history['train_loss']))
 
-    plot_loss_curve(state['history'], save_path=f'{run_name}_loss.png')
-    plot_parity(params, test_graphs, target_mean, target_std, save_path=f'{run_name}_parity.png')
-    plot_error_histogram(params, test_graphs, target_mean, target_std, save_path=f'{run_name}_hist.png')
-    plot_error_vs_molecule_size(params, test_graphs, target_mean, target_std,
-                                save_path=f'{run_name}_error_vs_size.png')
+    fig, ax1 = plt.subplots(figsize=(8, 5))
+    ax1.plot(epochs, history['train_loss'], color='tab:blue', label='train loss (normalized MSE)')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Train loss (normalized MSE)', color='tab:blue')
+    ax1.set_yscale('log')
+
+    ax2 = ax1.twinx()
+    ax2.plot(epochs, history['val_mae'], color='tab:orange', label='val MAE (eV)')
+    ax2.set_ylabel('Val MAE (eV)', color='tab:orange')
+    ax2.set_yscale('log')
+
+    plt.title('Training loss and validation MAE')
+    fig.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150)
+    plt.show()
+
+
+def plot_parity(params, test_graphs, target_mean, target_std, save_path=None):
+    preds, targets = get_predictions(params, test_graphs, target_mean, target_std)
+
+    plt.figure(figsize=(6, 6))
+    plt.scatter(targets, preds, alpha=0.5, s=12)
+    lims = [min(targets.min(), preds.min()), max(targets.max(), preds.max())]
+    plt.plot(lims, lims, 'r--', label='y = x (perfect prediction)')
+    plt.xlabel('True target (eV)')
+    plt.ylabel('Predicted target (eV)')
+    plt.title('Parity plot: predicted vs. true')
+    plt.legend()
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150)
+    plt.show()
+
+
+def plot_error_histogram(params, test_graphs, target_mean, target_std, save_path=None):
+    preds, targets = get_predictions(params, test_graphs, target_mean, target_std)
+    errors = preds - targets
+
+    plt.figure(figsize=(7, 5))
+    plt.hist(errors, bins=40)
+    plt.axvline(0, color='r', linestyle='--')
+    plt.xlabel('Prediction error (eV)  [pred - true]')
+    plt.ylabel('Count')
+    plt.title(f'Error distribution (mean {errors.mean():.1f} eV, std {errors.std():.1f} eV)')
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150)
+    plt.show()
+
+
+def plot_error_vs_molecule_size(params, test_graphs, target_mean, target_std, save_path=None):
+    preds, targets = get_predictions(params, test_graphs, target_mean, target_std)
+    abs_errors = np.abs(preds - targets)
+    sizes = np.array([g['num_atoms'] for g in test_graphs])
+
+    plt.figure(figsize=(7, 5))
+    plt.scatter(sizes, abs_errors, alpha=0.5, s=12)
+    plt.xlabel('Number of atoms')
+    plt.ylabel('Absolute error (eV)')
+    plt.title('Error vs. molecule size')
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, dpi=150)
+    plt.show()
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else 'ae_1000')
+    params, history, test_graphs, test_metrics, target_mean, target_std = train_loop(
+        num_epochs=40, n_molecules=200, batch_size=16
+    )
+    print(f"target_mean={target_mean:.1f} eV, target_std={target_std:.1f} eV")
+
+    plot_loss_curve(history, save_path='loss_curve.png')
+    plot_parity(params, test_graphs, target_mean, target_std, save_path='parity.png')
+    plot_error_histogram(params, test_graphs, target_mean, target_std, save_path='error_hist.png')
+    plot_error_vs_molecule_size(params, test_graphs, target_mean, target_std, save_path='error_vs_size.png')
